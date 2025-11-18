@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: microservices_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - microservices_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authservice:
+    build:
+      context: ./AuthService
+      dockerfile: Dockerfile
+    container_name: authservice
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=authservicedb;Username=postgres;Password=postgres123
+      - Jwt__Key=XkT9mP2vL4wR7nQ8hS6jK3dF5gH1aZ0yB9xC4tN7uM2pE8qW5oI6rV3sA1bG4cJ7
+      - Jwt__Issuer=AuthService
+      - Jwt__Audience=AuthServiceUsers
+      - Jwt__ExpiryInHours=24
+    ports:
+      - "5001:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - microservices_network
+    restart: on-failure
+
+  productservice:
+    build:
+      context: ./ProductService
+      dockerfile: Dockerfile
+    container_name: productservice
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=productservicedb;Username=postgres;Password=postgres123
+      - Jwt__Key=XkT9mP2vL4wR7nQ8hS6jK3dF5gH1aZ0yB9xC4tN7uM2pE8qW5oI6rV3sA1bG4cJ7
+      - Jwt__Issuer=AuthService
+      - Jwt__Audience=AuthServiceUsers
+      - Services__AuthService__Url=http://authservice:8080
+    ports:
+      - "5002:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      authservice:
+        condition: service_started
+    networks:
+      - microservices_network
+    restart: on-failure
+
+networks:
+  microservices_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  postgres_data:
